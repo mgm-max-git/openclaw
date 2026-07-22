@@ -477,6 +477,47 @@ export function formatTokens(total?: number | null, context?: number | null) {
   return `tokens ${totalLabel}/${formatTokenCount(context)}${pct !== null ? ` (${pct}%)` : ""}`;
 }
 
+export type ContextUsageTone = "green" | "orange" | "red";
+
+export type ContextUsageBar = {
+  text: string;
+  tone: ContextUsageTone;
+};
+
+const CONTEXT_USAGE_BAR_WIDTH = 20;
+
+function formatContextCapacity(context: number): string {
+  return context >= 1_000 ? `${Math.round(context / 1_000)}k` : formatTokenCount(context);
+}
+
+export function formatContextUsageBar(
+  total?: number | null,
+  context?: number | null,
+): ContextUsageBar | null {
+  if (
+    typeof total !== "number" ||
+    !Number.isFinite(total) ||
+    total < 0 ||
+    typeof context !== "number" ||
+    !Number.isFinite(context) ||
+    context <= 0
+  ) {
+    return null;
+  }
+  const percent = Math.max(0, (total / context) * 100);
+  const roundedPercent = Math.min(999, Math.round(percent));
+  const filled = Math.min(
+    CONTEXT_USAGE_BAR_WIDTH,
+    Math.max(0, Math.round((percent / 100) * CONTEXT_USAGE_BAR_WIDTH)),
+  );
+  const bar = `${"█".repeat(filled)}${"░".repeat(CONTEXT_USAGE_BAR_WIDTH - filled)}`;
+  const tone: ContextUsageTone = percent <= 20 ? "green" : percent <= 50 ? "orange" : "red";
+  return {
+    text: `${roundedPercent}% ${bar} ${formatContextCapacity(context)}`,
+    tone,
+  };
+}
+
 function formatGoalUsage(goal: SessionGoal): string | null {
   if (goal.tokenBudget === undefined) {
     return goal.tokensUsed > 0 ? formatTokenCount(goal.tokensUsed) : null;

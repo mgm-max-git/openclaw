@@ -69,8 +69,13 @@ function readActivePalette(mod: ThemeModule) {
     link: colorFromStyle(mod.markdownTheme.link, 38),
     error: colorFromStyle(mod.theme.error, 38),
     success: colorFromStyle(mod.theme.success, 38),
+    contextSuccess: colorFromStyle(mod.theme.contextSuccess, 38),
   };
 }
+
+it("uses the reference neon green for context usage on dark terminals", () => {
+  expect(colorFromStyle(theme.contextSuccess, 38)).toBe("#39FF14");
+});
 
 async function importThemeWithEnv(env: ThemeEnvOverrides) {
   if (Object.hasOwn(env, "OPENCLAW_THEME")) {

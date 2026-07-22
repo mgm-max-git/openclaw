@@ -108,6 +108,7 @@ const darkPalette = {
   link: "#7DD3A5",
   error: "#F97066",
   success: "#7DD3A5",
+  contextSuccess: "#39FF14",
 } as const;
 
 const lightPalette = {
@@ -131,6 +132,7 @@ const lightPalette = {
   link: "#047857",
   error: "#DC2626",
   success: "#047857",
+  contextSuccess: "#047857",
 } as const;
 
 const palette = lightMode ? lightPalette : darkPalette;
@@ -153,6 +155,7 @@ export const theme = {
   accent: fg(palette.accent),
   accentSoft: fg(palette.accentSoft),
   success: fg(palette.success),
+  contextSuccess: fg(palette.contextSuccess),
   error: fg(palette.error),
   header: (text: string) => chalk.bold(fg(palette.accent)(text)),
   system: fg(palette.systemText),

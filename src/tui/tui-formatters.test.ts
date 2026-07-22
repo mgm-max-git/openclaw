@@ -7,9 +7,32 @@ import {
   extractThinkingFromMessage,
   formatModelFooter,
   formatGoalFooter,
+  formatContextUsageBar,
   isCommandMessage,
   sanitizeRenderableText,
 } from "./tui-formatters.js";
+
+describe("formatContextUsageBar", () => {
+  it("places percentage left and context maximum right of a square-ended bar", () => {
+    expect(formatContextUsageBar(170_000, 1_000_000)).toEqual({
+      text: "17% ███░░░░░░░░░░░░░░░░░ 1000k",
+      tone: "green",
+    });
+  });
+
+  it("preserves green, orange, and red threshold boundaries", () => {
+    expect(formatContextUsageBar(20, 100)?.tone).toBe("green");
+    expect(formatContextUsageBar(20.01, 100)?.tone).toBe("orange");
+    expect(formatContextUsageBar(50, 100)?.tone).toBe("orange");
+    expect(formatContextUsageBar(50.01, 100)?.tone).toBe("red");
+  });
+
+  it("fails closed when usage or capacity is unavailable", () => {
+    expect(formatContextUsageBar(null, 100)).toBeNull();
+    expect(formatContextUsageBar(10, 0)).toBeNull();
+    expect(formatContextUsageBar(Number.NaN, 100)).toBeNull();
+  });
+});
 
 describe("formatModelFooter", () => {
   it("shows a compact model name and its active thinking level", () => {

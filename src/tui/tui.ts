@@ -48,6 +48,7 @@ import { createEventHandlers } from "./tui-event-handlers.js";
 import {
   formatGoalFooter,
   formatModelFooter,
+  formatContextUsageBar,
   sanitizeRenderableText,
   formatTokens,
 } from "./tui-formatters.js";
@@ -1284,7 +1285,17 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
       model: sessionInfo.model,
       thinkingLevel: thinkingLevelOverride ?? sessionInfo.thinkingLevel,
     });
-    const tokens = formatTokens(sessionInfo.totalTokens ?? null, sessionInfo.contextTokens ?? null);
+    const contextUsage = formatContextUsageBar(
+      sessionInfo.totalTokens ?? null,
+      sessionInfo.contextTokens ?? null,
+    );
+    const tokens = contextUsage
+      ? contextUsage.tone === "green"
+        ? theme.contextSuccess(contextUsage.text)
+        : contextUsage.tone === "orange"
+          ? theme.accentSoft(contextUsage.text)
+          : theme.error(contextUsage.text)
+      : theme.dim(formatTokens(sessionInfo.totalTokens ?? null, sessionInfo.contextTokens ?? null));
     const fastLabel =
       sessionInfo.fastMode === "auto" ? "fast:auto" : sessionInfo.fastMode === true ? "fast" : null;
     const verbose = sessionInfo.verboseLevel ?? "off";
@@ -1301,7 +1312,9 @@ export async function runTui(opts: RunTuiOptions): Promise<TuiResult> {
       reasoningLabel,
       tokens,
     ].filter(Boolean);
-    footer.setText(theme.dim(footerParts.join(" | ")));
+    footer.setText(
+      footerParts.map((part) => (part === tokens ? part : theme.dim(part))).join(theme.dim(" | ")),
+    );
   };
 
   const { openOverlay, closeOverlay } = createOverlayHandlers(tui, editor);
