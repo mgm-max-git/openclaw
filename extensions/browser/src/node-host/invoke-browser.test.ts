@@ -5,12 +5,17 @@ import nodePath from "node:path";
 import { MAX_TIMER_TIMEOUT_MS } from "openclaw/plugin-sdk/number-runtime";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BROWSER_PROXY_MAX_FILE_BYTES } from "../browser-proxy-envelope.js";
+import { assertBrowserNavigationAllowed } from "../browser/navigation-guard.js";
+import type { LookupFn, SsrFPolicy } from "../infra/net/ssrf.js";
 
 const BROWSER_PROXY_MAX_FILES = 256;
 const BROWSER_PROXY_MAX_TOTAL_FILE_BYTES = 16 * 1024 * 1024;
 
 const controlServiceMocks = vi.hoisted(() => ({
-  createBrowserControlContext: vi.fn(() => ({ control: true })),
+  createBrowserControlContext: vi.fn((options?: { ssrfPolicy?: SsrFPolicy }) => ({
+    control: true,
+    ssrfPolicy: options?.ssrfPolicy,
+  })),
   startBrowserControlServiceFromConfig: vi.fn(async () => true),
 }));
 
@@ -157,6 +162,7 @@ let runBrowserProxyCommand: typeof import("./invoke-browser.js").runBrowserProxy
 type BrowserDispatchRequest = {
   path?: string;
   query?: unknown;
+  body?: unknown;
 };
 
 function firstBrowserDispatchRequest(): BrowserDispatchRequest {
@@ -175,7 +181,12 @@ describe("runBrowserProxyCommand", () => {
     dispatcherMocks.createBrowserRouteDispatcher.mockReset().mockImplementation(() => ({
       dispatch: dispatcherMocks.dispatch,
     }));
-    controlServiceMocks.createBrowserControlContext.mockReset().mockReturnValue({ control: true });
+    controlServiceMocks.createBrowserControlContext
+      .mockReset()
+      .mockImplementation((options?: { ssrfPolicy?: SsrFPolicy }) => ({
+        control: true,
+        ssrfPolicy: options?.ssrfPolicy,
+      }));
     controlServiceMocks.startBrowserControlServiceFromConfig.mockReset().mockResolvedValue(true);
     configMocks.sourceConfig = null;
     configMocks.loadConfig.mockReset().mockReturnValue({
@@ -249,6 +260,64 @@ describe("runBrowserProxyCommand", () => {
     } finally {
       await fs.rm(tempDir, { recursive: true, force: true });
     }
+  });
+
+  it.each([
+    {
+      name: "allows an exact hostname",
+      url: "https://www.google.com/maps",
+      lookupAddress: "142.250.72.100",
+      allowed: true,
+    },
+    {
+      name: "blocks a private IP literal",
+      url: "http://127.0.0.1/",
+      lookupAddress: "127.0.0.1",
+      allowed: false,
+    },
+    {
+      name: "blocks an unrelated hostname",
+      url: "https://example.com/",
+      lookupAddress: "93.184.216.34",
+      allowed: false,
+    },
+  ])("$name through the node proxy navigation policy", async ({ url, lookupAddress, allowed }) => {
+    const ssrfPolicy = {
+      dangerouslyAllowPrivateNetwork: false,
+      allowedHostnames: ["localhost", "www.google.com"],
+    };
+    const lookupFn = vi.fn(async () => [
+      { address: lookupAddress, family: lookupAddress.includes(":") ? 6 : 4 },
+    ]) as unknown as LookupFn;
+    dispatcherMocks.createBrowserRouteDispatcher.mockImplementationOnce(
+      (context: { ssrfPolicy?: SsrFPolicy }) => ({
+        dispatch: async (request: BrowserDispatchRequest) => {
+          const body = request.body as { url?: unknown } | undefined;
+          await assertBrowserNavigationAllowed({
+            url: String(body?.url ?? ""),
+            ssrfPolicy: context.ssrfPolicy,
+            lookupFn,
+          });
+          return { status: 200, body: { url: body?.url } };
+        },
+      }),
+    );
+
+    const result = runBrowserProxyCommand(
+      JSON.stringify({
+        method: "POST",
+        path: "/open",
+        body: { url },
+        ssrfPolicy,
+      }),
+    );
+
+    if (allowed) {
+      await expect(result).resolves.toContain(url);
+    } else {
+      await expect(result).rejects.toThrow(/Navigation blocked|Blocked hostname/i);
+    }
+    expect(controlServiceMocks.createBrowserControlContext).toHaveBeenCalledWith({ ssrfPolicy });
   });
 
   it("rejects an aggregate above the proxy transport budget", async () => {

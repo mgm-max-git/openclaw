@@ -22,6 +22,7 @@ vi.mock("./browser/runtime-lifecycle.js", () => ({
 }));
 
 const {
+  createBrowserControlContext,
   ensureBrowserControlRuntime,
   getBrowserControlState,
   stopBrowserControlRuntime,
@@ -48,6 +49,20 @@ beforeEach(() => {
 });
 
 describe("browser control lifecycle", () => {
+  it("applies a request-scoped SSRF policy without mutating shared runtime state", async () => {
+    const runtime = await start("service");
+    const ssrfPolicy = {
+      dangerouslyAllowPrivateNetwork: false,
+      allowedHostnames: ["localhost", "www.google.com"],
+    };
+
+    const context = createBrowserControlContext({ ssrfPolicy });
+
+    expect(context.state().resolved.ssrfPolicy).toEqual(ssrfPolicy);
+    expect(runtime.resolved.ssrfPolicy).toBeUndefined();
+    await stop("service");
+  });
+
   it("allows a start queued after a no-state stop", async () => {
     const stopping = stop("service");
     const starting = start("service");

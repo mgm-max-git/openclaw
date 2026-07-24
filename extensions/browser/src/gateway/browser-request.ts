@@ -25,6 +25,7 @@ import {
   isNodeCommandAllowed,
   isPersistentBrowserProfileMutation,
   persistBrowserProxyFiles,
+  resolveBrowserConfig,
   resolveNodeCommandAllowlist,
   resolveNodeIdFromList,
   resolveRequestedBrowserProfile,
@@ -189,6 +190,7 @@ export async function handleBrowserGatewayRequest({
       body,
       timeoutMs,
       profile: resolveRequestedBrowserProfile({ query, body }),
+      ssrfPolicy: resolveBrowserConfig(cfg.browser, cfg).ssrfPolicy,
       errorEnvelope: BROWSER_PROXY_ERROR_ENVELOPE,
     };
     const res = await context.nodeRegistry.invoke({

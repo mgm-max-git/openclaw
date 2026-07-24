@@ -14,6 +14,7 @@ import {
   persistBrowserProxyFiles,
 } from "./browser-tool.runtime.js";
 import { BrowserServiceError } from "./browser/client-fetch.js";
+import type { SsrFPolicy } from "./infra/net/ssrf.js";
 
 const logger = createSubsystemLogger("browser");
 const DEFAULT_BROWSER_PROXY_TIMEOUT_MS = 20_000;
@@ -62,6 +63,7 @@ async function callBrowserProxy(params: {
   body?: unknown;
   timeoutMs?: number;
   profile?: string;
+  ssrfPolicy?: SsrFPolicy;
 }): Promise<BrowserProxySuccess> {
   const proxyTimeoutMs =
     typeof params.timeoutMs === "number" && Number.isFinite(params.timeoutMs)
@@ -86,6 +88,7 @@ async function callBrowserProxy(params: {
           body: params.body,
           timeoutMs: proxyTimeoutMs,
           profile: params.profile,
+          ssrfPolicy: params.ssrfPolicy,
           errorEnvelope: BROWSER_PROXY_ERROR_ENVELOPE,
         },
         idempotencyKey: crypto.randomUUID(),
@@ -130,6 +133,7 @@ async function callLocalBrowserControl(params: Parameters<BrowserProxyRequest>[0
 export function createBrowserNodeProxyRequest(params: {
   nodeTarget: { nodeId: string; label?: string };
   allowAutomaticHostFallback: boolean;
+  ssrfPolicy?: SsrFPolicy;
 }): BrowserProxyRequest {
   let hostFallbackActive = false;
   const dispatch = async (request: Parameters<BrowserProxyRequest>[0]) => {
@@ -140,6 +144,7 @@ export function createBrowserNodeProxyRequest(params: {
       const proxy = await callBrowserProxy({
         nodeId: params.nodeTarget.nodeId,
         markControlHostUnavailable: params.allowAutomaticHostFallback,
+        ssrfPolicy: params.ssrfPolicy,
         ...request,
       });
       const mapping = await persistBrowserProxyFiles(proxy.files);

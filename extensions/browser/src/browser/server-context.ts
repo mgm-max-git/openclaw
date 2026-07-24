@@ -115,6 +115,7 @@ function createProfileContext(
     profile,
     state,
     runtime: profileState,
+    ssrfPolicyOverride: opts.ssrfPolicyOverride,
   });
 
   const rawAvailability = createProfileAvailability({
@@ -220,7 +221,7 @@ function createProfileContext(
 export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteContext {
   const refreshConfigFromDisk = opts.refreshConfigFromDisk === true;
 
-  const state = () => {
+  const runtimeState = () => {
     const current = opts.getState();
     if (!current) {
       throw new BrowserProfileUnavailableError("Browser server not started.");
@@ -230,9 +231,22 @@ export function createBrowserRouteContext(opts: ContextOptions): BrowserRouteCon
     }
     return current;
   };
+  const state = () => {
+    const current = runtimeState();
+    if (opts.ssrfPolicyOverride === undefined) {
+      return current;
+    }
+    return {
+      ...current,
+      resolved: {
+        ...current.resolved,
+        ssrfPolicy: opts.ssrfPolicyOverride,
+      },
+    };
+  };
 
   const forProfile = (profileName?: string): ProfileContext => {
-    const current = state();
+    const current = runtimeState();
     const name = profileName ?? current.resolved.defaultProfile;
     const profile = resolveBrowserProfileWithHotReload({
       current,

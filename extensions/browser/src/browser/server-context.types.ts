@@ -3,6 +3,7 @@
  * operation factories.
  */
 import type { Server } from "node:http";
+import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import type { RunningChrome } from "./chrome.js";
 import type { BrowserOpenResult, BrowserTab, BrowserTransport } from "./client.types.js";
 import type { ResolvedBrowserConfig, ResolvedBrowserProfile } from "./config.js";
@@ -123,4 +124,5 @@ export type ContextOptions = {
   getState: () => BrowserServerState | null;
   onEnsureAttachTarget?: (profile: ResolvedBrowserProfile) => Promise<void>;
   refreshConfigFromDisk?: boolean;
+  ssrfPolicyOverride?: SsrFPolicy;
 };

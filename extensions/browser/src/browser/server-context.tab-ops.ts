@@ -2,6 +2,7 @@
  * Browser tab listing, opening, labeling, and alias management for one profile.
  */
 import { sleepWithAbort } from "openclaw/plugin-sdk/runtime-env";
+import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import { resolveBrowserNavigationProxyMode } from "./browser-proxy-mode.js";
 import { resolveCdpControlPolicy } from "./cdp-reachability-policy.js";
 import { isSelectableCdpBrowserTarget } from "./cdp-target-filter.js";
@@ -56,6 +57,7 @@ type TabOpsDeps = {
   profile: ResolvedBrowserProfile;
   state: () => BrowserServerState;
   runtime: ProfileRuntimeState;
+  ssrfPolicyOverride?: SsrFPolicy;
 };
 
 type ProfileTabOps = {
@@ -92,12 +94,17 @@ function normalizeWsUrl(raw: string | undefined, cdpBaseUrl: string): string | u
 }
 
 /** Builds list/open/label tab operations for one resolved browser profile. */
-export function createProfileTabOps({ profile, state, runtime }: TabOpsDeps): ProfileTabOps {
+export function createProfileTabOps({
+  profile,
+  state,
+  runtime,
+  ssrfPolicyOverride,
+}: TabOpsDeps): ProfileTabOps {
   const cdpHttpBase = normalizeCdpHttpBaseForJsonEndpoints(profile.cdpUrl);
   const capabilities = getBrowserProfileCapabilities(profile);
   const getCdpControlPolicy = () => resolveCdpControlPolicy(profile, state().resolved.ssrfPolicy);
   const getNavigationPolicy = () =>
-    withBrowserNavigationPolicy(state().resolved.ssrfPolicy, {
+    withBrowserNavigationPolicy(ssrfPolicyOverride ?? state().resolved.ssrfPolicy, {
       browserProxyMode: resolveBrowserNavigationProxyMode({
         resolved: state().resolved,
         profile,
@@ -300,7 +307,11 @@ export function createProfileTabOps({ profile, state, runtime }: TabOpsDeps): Pr
       return adoptValidatedTab(page, { ...opts, label: normalizedLabel });
     }
 
-    if (capabilities.usesPersistentPlaywright) {
+    const requiresInspectableRedirects = requiresInspectableBrowserNavigationRedirectsForUrl(
+      url,
+      state().resolved.ssrfPolicy,
+    );
+    if (capabilities.usesPersistentPlaywright || requiresInspectableRedirects) {
       const mod = await getPwAiModule({ mode: "strict" });
       const createPageViaPlaywright = (mod as Partial<PwAiModule> | null)?.createPageViaPlaywright;
       if (typeof createPageViaPlaywright === "function") {
@@ -325,7 +336,7 @@ export function createProfileTabOps({ profile, state, runtime }: TabOpsDeps): Pr
       }
     }
 
-    if (requiresInspectableBrowserNavigationRedirectsForUrl(url, state().resolved.ssrfPolicy)) {
+    if (requiresInspectableRedirects) {
       throw new InvalidBrowserNavigationUrlError(
         "Navigation blocked: strict browser SSRF policy requires Playwright-backed redirect-hop inspection",
       );

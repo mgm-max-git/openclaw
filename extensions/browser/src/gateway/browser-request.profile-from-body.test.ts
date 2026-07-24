@@ -141,6 +141,15 @@ describe("browser.request profile selection", () => {
   });
 
   it("uses profile from request body when query profile is missing", async () => {
+    loadConfigMock.mockReturnValue({
+      browser: {
+        ssrfPolicy: {
+          dangerouslyAllowPrivateNetwork: false,
+          allowedHostnames: ["localhost", "www.google.com"],
+        },
+      },
+      gateway: { nodes: { browser: { mode: "auto" } } },
+    });
     const { respond, nodeRegistry } = await runBrowserRequest({
       method: "POST",
       path: "/act",
@@ -151,6 +160,10 @@ describe("browser.request profile selection", () => {
     expect(invoke.command).toBe("browser.proxy");
     expect(invoke.params?.profile).toBe("work");
     expect(invoke.params?.errorEnvelope).toBe("browser-v1");
+    expect(invoke.params?.ssrfPolicy).toEqual({
+      dangerouslyAllowPrivateNetwork: false,
+      allowedHostnames: ["localhost", "www.google.com"],
+    });
     expect(firstRespondCall(respond)[0]).toBe(true);
   });
 

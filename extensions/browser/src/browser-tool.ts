@@ -500,7 +500,11 @@ export function createBrowserTool(opts?: {
         opts?.allowHostControl !== false,
       );
       const proxyRequest = nodeTarget
-        ? createBrowserNodeProxyRequest({ nodeTarget, allowAutomaticHostFallback })
+        ? createBrowserNodeProxyRequest({
+            nodeTarget,
+            allowAutomaticHostFallback,
+            ssrfPolicy: resolvedBrowser.ssrfPolicy,
+          })
         : null;
       const toolTimeoutMs =
         requestedTimeoutMs ??

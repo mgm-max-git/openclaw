@@ -9,6 +9,7 @@ import { BrowserProfileUnavailableError } from "./browser/errors.js";
 import { createBrowserRuntimeState, stopBrowserRuntime } from "./browser/runtime-lifecycle.js";
 import { type BrowserServerState, createBrowserRouteContext } from "./browser/server-context.js";
 import { isBrowserRuntimeRunning } from "./browser/server-context.lifecycle.js";
+import type { SsrFPolicy } from "./infra/net/ssrf.js";
 
 type BrowserControlOwner = "server" | "service";
 
@@ -46,10 +47,11 @@ export function getBrowserControlState(): BrowserServerState | null {
 }
 
 /** Create a route context bound to the current shared browser runtime. */
-export function createBrowserControlContext() {
+export function createBrowserControlContext(options?: { ssrfPolicy?: SsrFPolicy }) {
   return createBrowserRouteContext({
     getState: () => state,
-    refreshConfigFromDisk: true,
+    refreshConfigFromDisk: options?.ssrfPolicy === undefined,
+    ssrfPolicyOverride: options?.ssrfPolicy,
   });
 }
 

@@ -999,6 +999,17 @@ describe("browser tool snapshot maxChars", () => {
 
   it("routes to node proxy when target=node", async () => {
     mockSingleBrowserProxyNode();
+    browserConfigMocks.resolveBrowserConfig.mockReturnValue({
+      enabled: true,
+      controlPort: 18791,
+      profiles: {},
+      defaultProfile: "openclaw",
+      actionTimeoutMs: 60_000,
+      ssrfPolicy: {
+        dangerouslyAllowPrivateNetwork: false,
+        allowedHostnames: ["localhost", "www.google.com"],
+      },
+    });
     const tool = createBrowserTool();
     await tool.execute?.("call-1", { action: "status", target: "node" });
 
@@ -1009,6 +1020,10 @@ describe("browser tool snapshot maxChars", () => {
     expect(request.command).toBe("browser.proxy");
     expect(request.params?.timeoutMs).toBe(20_000);
     expect(request.params?.errorEnvelope).toBe("browser-v1");
+    expect(request.params?.ssrfPolicy).toEqual({
+      dangerouslyAllowPrivateNetwork: false,
+      allowedHostnames: ["localhost", "www.google.com"],
+    });
     expect(browserClientMocks.browserStatus).not.toHaveBeenCalled();
   });
 

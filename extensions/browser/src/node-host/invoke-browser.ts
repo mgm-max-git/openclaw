@@ -28,6 +28,7 @@ import {
   createBrowserControlContext,
   startBrowserControlServiceFromConfig,
 } from "../control-service.js";
+import type { SsrFPolicy } from "../infra/net/ssrf.js";
 import { withTimeout } from "../sdk-node-runtime.js";
 import { detectMime } from "../sdk-setup-tools.js";
 
@@ -38,6 +39,7 @@ type BrowserProxyParams = {
   body?: unknown;
   timeoutMs?: number;
   profile?: string;
+  ssrfPolicy?: SsrFPolicy;
   errorEnvelope?: unknown;
 };
 
@@ -276,7 +278,9 @@ export async function runBrowserProxyCommand(paramsJSON?: string | null): Promis
     query.profile = requestedProfile;
   }
 
-  const dispatcher = createBrowserRouteDispatcher(createBrowserControlContext());
+  const dispatcher = createBrowserRouteDispatcher(
+    createBrowserControlContext({ ssrfPolicy: params.ssrfPolicy }),
+  );
   let response;
   try {
     response = await withTimeout(
