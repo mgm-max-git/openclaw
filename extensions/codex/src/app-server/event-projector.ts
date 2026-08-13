@@ -61,6 +61,7 @@ export { CodexNativeToolLifecycleProjector };
 export { shouldEmitTranscriptToolProgress } from "./event-projector-tool-progress.js";
 
 type CodexAppServerToolTelemetry = {
+  acceptedSessionSpawns?: Array<{ runId: string; childSessionKey: string }>;
   didSendViaMessagingTool: boolean;
   didDeliverSourceReplyViaMessageTool?: boolean;
   messagingToolSentTexts: string[];
@@ -396,6 +397,7 @@ export class CodexAppServerEventProjector {
     });
     const toolMetas = this.toolProgressProjection.toolMetas;
     const hadPotentialSideEffects =
+      (toolTelemetry.acceptedSessionSpawns?.length ?? 0) > 0 ||
       toolTelemetry.didSendViaMessagingTool ||
       (toolTelemetry.successfulCronAdds ?? 0) > 0 ||
       this.generatedMediaProjection.hasGeneratedMedia() ||
@@ -418,6 +420,7 @@ export class CodexAppServerEventProjector {
       toolMetas,
       lastAssistant,
       currentAttemptAssistant,
+      acceptedSessionSpawns: toolTelemetry.acceptedSessionSpawns ?? [],
       ...(this.toolProgressProjection.lastToolError
         ? { lastToolError: this.toolProgressProjection.lastToolError }
         : {}),

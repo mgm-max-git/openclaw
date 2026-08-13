@@ -387,6 +387,9 @@ describe("createCodexDynamicToolBridge", () => {
     expect(onAgentToolResult).toHaveBeenCalledWith(
       expect.objectContaining({ toolName: "sessions_spawn", isError: false }),
     );
+    expect(bridge.telemetry.acceptedSessionSpawns).toEqual([
+      { runId: "run_5f3a9c", childSessionKey: "child-7b21" },
+    ]);
   });
 
   it("still reports a forbidden sessions_spawn result as a failed dynamic tool call", async () => {
@@ -407,6 +410,7 @@ describe("createCodexDynamicToolBridge", () => {
     });
 
     expect(result.success).toBe(false);
+    expect(bridge.telemetry.acceptedSessionSpawns).toEqual([]);
   });
 
   it("treats accepted goal tool statuses (created / updated) as successful dynamic tool calls", async () => {

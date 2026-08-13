@@ -356,6 +356,7 @@ export type CodexDynamicToolBridge = {
     toolCallId: string,
   ) => { executedArguments: Record<string, unknown>; executionStarted: boolean } | undefined;
   telemetry: {
+    acceptedSessionSpawns: Array<{ runId: string; childSessionKey: string }>;
     didSendViaMessagingTool: boolean;
     didDeliverSourceReplyViaMessageTool: boolean;
     messagingToolSentTexts: string[];
@@ -459,6 +460,7 @@ export function createCodexDynamicToolBridge(params: {
   warnQuarantinedDynamicTools(quarantinedTools);
   emitQuarantinedDynamicToolDiagnostics(quarantinedTools, params.hookContext);
   const telemetry: CodexDynamicToolBridge["telemetry"] = {
+    acceptedSessionSpawns: [],
     didSendViaMessagingTool: false,
     didDeliverSourceReplyViaMessageTool: false,
     messagingToolSentTexts: [],
@@ -596,6 +598,7 @@ export function createCodexDynamicToolBridge(params: {
         captureExecutionBoundary();
         const telemetryRawResult = sanitizeToolResult(rawResult);
         const rawIsError = isToolResultError(rawResult);
+        recordAcceptedSessionSpawn(telemetry, toolName, rawResult, rawIsError);
         const rawResultFailureKind = resolveToolResultFailureKind(rawResult);
         const middlewareResult = await middlewareRunner.applyToolResultMiddleware({
           threadId: call.threadId,
@@ -881,6 +884,33 @@ function notifyAgentToolResult(
     embeddedAgentLog.warn(
       `onAgentToolResult handler failed: tool=${toolName} error=${String(error)}`,
     );
+  }
+}
+
+function recordAcceptedSessionSpawn(
+  telemetry: CodexDynamicToolBridge["telemetry"],
+  toolName: string,
+  result: AgentToolResult<unknown>,
+  isError: boolean,
+): void {
+  if (toolName !== "sessions_spawn" || isError || !isRecord(result.details)) {
+    return;
+  }
+  const details = result.details;
+  const runId = typeof details.runId === "string" ? details.runId.trim() : "";
+  const childSessionKey =
+    typeof details.childSessionKey === "string" ? details.childSessionKey.trim() : "";
+  if (details.status !== "accepted" || !runId || !childSessionKey) {
+    return;
+  }
+  // Codex's dynamic-tool protocol carries only text content plus success. Keep
+  // structured spawn identity in OpenClaw telemetry so sessions_yield can re-arm it.
+  if (
+    !telemetry.acceptedSessionSpawns.some(
+      (spawn) => spawn.runId === runId && spawn.childSessionKey === childSessionKey,
+    )
+  ) {
+    telemetry.acceptedSessionSpawns.push({ runId, childSessionKey });
   }
 }
 

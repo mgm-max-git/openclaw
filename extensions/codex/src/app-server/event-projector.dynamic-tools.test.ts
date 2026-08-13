@@ -18,6 +18,20 @@ import {
 registerCodexEventProjectorTestLifecycle();
 
 describe("CodexAppServerEventProjector dynamic tool projection", () => {
+  it("carries accepted session spawns into the shared attempt result", async () => {
+    const projector = await createProjector();
+    const telemetry = buildEmptyToolTelemetry();
+    telemetry.acceptedSessionSpawns = [
+      { runId: "run-child", childSessionKey: "agent:scout:subagent:child" },
+    ];
+
+    const result = projector.buildResult(telemetry, { yieldDetected: true });
+
+    expect(result.acceptedSessionSpawns).toEqual(telemetry.acceptedSessionSpawns);
+    expect(result.replayMetadata).toEqual({ hadPotentialSideEffects: true, replaySafe: false });
+    expect(result.yieldDetected).toBe(true);
+  });
+
   it("records dynamic OpenClaw tool calls in mirrored transcript snapshots", async () => {
     const projector = await createProjector();
 
