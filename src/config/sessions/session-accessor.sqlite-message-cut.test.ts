@@ -15,6 +15,7 @@ import {
   switchSessionBranch,
   upsertSessionEntry,
 } from "./session-accessor.js";
+import { summarizeSessionBranches } from "./session-accessor.sqlite-message-cut.js";
 
 const tempDirs = useAutoCleanupTempDirTracker(afterEach);
 const agentId = "main";
@@ -136,6 +137,50 @@ describe("SQLite session message cuts", () => {
         },
       ],
     });
+  });
+
+  it("summarizes thousands of deep sibling branches without quadratic path scans", () => {
+    const trunkLength = 2_500;
+    const branchCount = 750;
+    const events: Array<Record<string, unknown>> = [];
+    let parentId: string | null = null;
+    for (let index = 0; index < trunkLength; index += 1) {
+      const id = `trunk-${index}`;
+      events.push({
+        type: "message",
+        id,
+        parentId,
+        message: { role: "user", content: `trunk message ${index}` },
+      });
+      parentId = id;
+    }
+    for (let index = 0; index < branchCount; index += 1) {
+      events.push({
+        type: "message",
+        id: `branch-${index}`,
+        parentId,
+        appendMode: "side",
+        message: { role: "assistant", content: `branch answer ${index}` },
+      });
+    }
+
+    const startedAt = performance.now();
+    const branches = summarizeSessionBranches(events);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(branches).toHaveLength(branchCount + 1);
+    expect(branches[0]).toMatchObject({
+      leafEntryId: `trunk-${trunkLength - 1}`,
+      messageCount: trunkLength,
+      active: true,
+    });
+    expect(branches.at(-1)).toMatchObject({
+      leafEntryId: "branch-0",
+      headline: "branch answer 0",
+      messageCount: trunkLength + 1,
+      active: false,
+    });
+    expect(elapsedMs).toBeLessThan(1_500);
   });
 
   it("switches to another tip and rebuilds the active-path projection", async () => {
