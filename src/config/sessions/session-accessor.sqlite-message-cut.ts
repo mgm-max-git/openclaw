@@ -249,15 +249,23 @@ function validateBranchTip(
   return tree.leafId === entryId ? "already-active" : undefined;
 }
 
-function summarizeSessionBranches(events: readonly TranscriptEvent[]): SessionBranchSummary[] {
+type SessionBranchPathSummary = {
+  headline?: string;
+  messageCount: number;
+};
+
+export function summarizeSessionBranches(
+  events: readonly TranscriptEvent[],
+): SessionBranchSummary[] {
   const tree = scanSessionTranscriptTree(events);
+  const pathSummaries = new Map<string, SessionBranchPathSummary>();
   return sessionBranchTipNodes(tree)
     .toSorted(
       (left, right) =>
         Number(right.id === tree.leafId) - Number(left.id === tree.leafId) ||
         right.index - left.index,
     )
-    .map((node) => summarizeSessionBranch(tree, node.id));
+    .map((node) => summarizeSessionBranch(tree, node.id, pathSummaries));
 }
 
 function sessionBranchTipNodes(tree: SessionTranscriptTree<TranscriptEvent>) {
@@ -276,24 +284,77 @@ function sessionBranchTipNodes(tree: SessionTranscriptTree<TranscriptEvent>) {
 function summarizeSessionBranch(
   tree: SessionTranscriptTree<TranscriptEvent>,
   leafEntryId: string,
+  pathSummaries: Map<string, SessionBranchPathSummary>,
 ): SessionBranchSummary {
-  const path = selectSessionTranscriptTreePathNodes(tree, leafEntryId);
-  const messages = path.flatMap((node) => {
-    const record = asRecord(node.entry);
-    return record?.type === "message" ? [record] : [];
-  });
-  const headline = messages
-    .toReversed()
-    .map((record) => extractHeadlineText(record.message))
-    .find((value): value is string => value !== undefined);
+  const pathSummary = summarizeSessionBranchPath(tree, leafEntryId, pathSummaries);
   const timestamp = asRecord(tree.byId.get(leafEntryId)?.entry)?.timestamp;
   return {
     leafEntryId,
-    headline: truncateBranchHeadline(headline ?? ""),
-    messageCount: messages.length,
+    headline: truncateBranchHeadline(pathSummary.headline ?? ""),
+    messageCount: pathSummary.messageCount,
     ...(typeof timestamp === "string" && timestamp.trim() ? { updatedAt: timestamp } : {}),
     active: tree.leafId === leafEntryId,
   };
+}
+
+function summarizeSessionBranchPath(
+  tree: SessionTranscriptTree<TranscriptEvent>,
+  leafEntryId: string,
+  pathSummaries: Map<string, SessionBranchPathSummary>,
+): SessionBranchPathSummary {
+  const cached = pathSummaries.get(leafEntryId);
+  if (cached) {
+    return cached;
+  }
+
+  const chain: Array<NonNullable<ReturnType<typeof tree.byId.get>>> = [];
+  const seen = new Set<string>();
+  let currentId: string | null = leafEntryId;
+  let summary: SessionBranchPathSummary = { messageCount: 0 };
+  let cycleDetected = false;
+
+  while (currentId) {
+    const currentSummary = pathSummaries.get(currentId);
+    if (currentSummary) {
+      summary = currentSummary;
+      break;
+    }
+    if (seen.has(currentId)) {
+      cycleDetected = true;
+      break;
+    }
+    seen.add(currentId);
+    const current = tree.byId.get(currentId);
+    if (!current) {
+      break;
+    }
+    chain.push(current);
+    currentId = current.parentId;
+  }
+
+  if (cycleDetected) {
+    for (const node of chain) {
+      pathSummaries.set(node.id, { messageCount: 0 });
+    }
+    return { messageCount: 0 };
+  }
+
+  for (let index = chain.length - 1; index >= 0; index -= 1) {
+    const node = chain[index];
+    if (!node) {
+      continue;
+    }
+    const record = asRecord(node.entry);
+    const message = record?.type === "message" ? record : undefined;
+    const headline = message ? extractHeadlineText(message.message) : undefined;
+    summary = {
+      messageCount: summary.messageCount + (message ? 1 : 0),
+      ...(headline ? { headline } : summary.headline ? { headline: summary.headline } : {}),
+    };
+    pathSummaries.set(node.id, summary);
+  }
+
+  return pathSummaries.get(leafEntryId) ?? summary;
 }
 
 function extractHeadlineText(messageValue: unknown): string | undefined {
