@@ -70,6 +70,48 @@ type CacheEntry = {
   lastGood?: ControlUiSessionPullRequest[];
 };
 
+type SessionEntryForPullRequestContext = ReturnType<typeof loadSessionEntryReadOnly>["entry"];
+
+type ReadSessionEntryForPullRequestContextDeps = {
+  openReadView?: typeof openSessionEntryReadView;
+  loadLegacy?: typeof loadSessionEntryReadOnly;
+};
+
+/**
+ * Reads canonical and legacy-alias rows directly before falling back to the
+ * compatibility scan. Control UI requests commonly arrive with an unscoped
+ * session id plus agentId, so limiting the direct lookup to already-canonical
+ * keys still materializes the entire store on every poll.
+ */
+export function readSessionEntryForPullRequestContext(
+  params: {
+    agentId: string;
+    canonicalKey: string;
+    requestedKey: string;
+    requestedAgentId?: string;
+  },
+  deps: ReadSessionEntryForPullRequestContextDeps = {},
+): SessionEntryForPullRequestContext {
+  const view = (deps.openReadView ?? openSessionEntryReadView)({ agentId: params.agentId });
+  const candidateKeys = [...new Set([params.canonicalKey, params.requestedKey])];
+  let freshest: SessionEntryForPullRequestContext;
+  for (const key of candidateKeys) {
+    const entry = view.get(key);
+    if (!entry) {
+      continue;
+    }
+    if (!freshest || (entry.updatedAt ?? 0) > (freshest.updatedAt ?? 0)) {
+      freshest = entry;
+    }
+  }
+  if (freshest) {
+    return freshest;
+  }
+  return (deps.loadLegacy ?? loadSessionEntryReadOnly)(params.requestedKey, {
+    agentId: params.requestedAgentId,
+  }).entry;
+}
+
 const branchCache = new Map<string, CacheEntry>();
 
 export function parseControlUiSessionPullRequestsParams(
@@ -121,15 +163,15 @@ async function resolveSessionPullRequestGitContext(
     (canonicalKey === "global" || canonicalKey === "unknown" || !parseAgentSessionKey(requestedKey))
       ? normalizeAgentId(params.agentId)
       : resolveSessionStoreAgentId(cfg, canonicalKey);
-  // Canonical UI requests dominate this poller. Probe that exact SQLite row so
-  // concurrent PR refreshes do not materialize and parse the full session store.
-  // Alias and deleted-agent lookups retain the complete compatibility path.
-  const exactEntry =
-    requestedKey === canonicalKey
-      ? openSessionEntryReadView({ agentId }).get(canonicalKey)
-      : undefined;
-  const entry =
-    exactEntry ?? loadSessionEntryReadOnly(requestedKey, { agentId: params.agentId }).entry;
+  // Probe canonical and alias rows directly so ordinary UI keys never
+  // materialize the full store. Missing/deleted-agent cases retain the complete
+  // compatibility scan.
+  const entry = readSessionEntryForPullRequestContext({
+    agentId,
+    canonicalKey,
+    requestedKey,
+    ...(params.agentId ? { requestedAgentId: params.agentId } : {}),
+  });
   // Same session/agent scoping as sessions.files.*: a missing entry means an
   // unknown or deleted session, which must not fall back to some agent
   // workspace and surface another checkout's PRs.

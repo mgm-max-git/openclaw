@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   loadControlUiSessionPullRequests,
   parseControlUiSessionPullRequestsParams,
+  readSessionEntryForPullRequestContext,
 } from "./control-ui-session-prs.js";
 import { parseGitHubRemoteUrl } from "./github-remote.js";
 
@@ -133,6 +134,61 @@ describe("parseControlUiSessionPullRequestsParams", () => {
         refresh: false,
       }),
     ).toEqual({ sessionKey: "agent:main:main" });
+  });
+});
+
+describe("readSessionEntryForPullRequestContext", () => {
+  it("uses direct canonical and alias rows without materializing the full store", () => {
+    const canonical = { sessionId: "canonical", updatedAt: 10 };
+    const alias = { sessionId: "alias", updatedAt: 20 };
+    const get = vi.fn((key: string) => {
+      if (key === "agent:main:session-1") {
+        return canonical;
+      }
+      if (key === "session-1") {
+        return alias;
+      }
+      return undefined;
+    });
+    const loadLegacy = vi.fn(() => ({ entry: { sessionId: "fallback" } }));
+
+    const entry = readSessionEntryForPullRequestContext(
+      {
+        agentId: "main",
+        canonicalKey: "agent:main:session-1",
+        requestedKey: "session-1",
+        requestedAgentId: "main",
+      },
+      {
+        openReadView: () => ({ get }) as never,
+        loadLegacy: loadLegacy as never,
+      },
+    );
+
+    expect(entry).toBe(alias);
+    expect(get.mock.calls.map(([key]) => key)).toEqual(["agent:main:session-1", "session-1"]);
+    expect(loadLegacy).not.toHaveBeenCalled();
+  });
+
+  it("retains the compatibility scan when direct rows are absent", () => {
+    const fallback = { sessionId: "fallback", updatedAt: 30 };
+    const loadLegacy = vi.fn(() => ({ entry: fallback }));
+
+    const entry = readSessionEntryForPullRequestContext(
+      {
+        agentId: "retired",
+        canonicalKey: "agent:retired:session-1",
+        requestedKey: "session-1",
+        requestedAgentId: "retired",
+      },
+      {
+        openReadView: () => ({ get: () => undefined }) as never,
+        loadLegacy: loadLegacy as never,
+      },
+    );
+
+    expect(entry).toBe(fallback);
+    expect(loadLegacy).toHaveBeenCalledWith("session-1", { agentId: "retired" });
   });
 });
 
