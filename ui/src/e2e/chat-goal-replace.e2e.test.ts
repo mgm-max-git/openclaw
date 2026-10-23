@@ -61,6 +61,9 @@ suite.define(() => {
         await input.press("Enter");
         const dialog = page.getByRole("dialog", { name: "Replace goal objective?" });
         await dialog.waitFor({ timeout: 5000 });
+        expect(await dialog.textContent()).toContain(
+          "Update the objective without changing the goal’s status.",
+        );
         expect(await gateway.getRequests("chat.send")).toHaveLength(0);
         if (artifacts) {
           await captureFrame(artifacts, "confirmation.png", page.locator("body"), [
@@ -201,7 +204,9 @@ suite.define(() => {
         await exactButton(page, "Replace objective").click();
         const dialog = page.getByRole("dialog", { name: "Replace goal objective?" });
         await dialog.waitFor();
-        expect(await dialog.textContent()).toContain("interrupts and settles");
+        expect(await dialog.textContent()).toContain(
+          "Interrupt this turn, update the objective, then resume the goal.",
+        );
         if (artifacts) {
           await captureFrame(artifacts, "running-confirmation.png", page.locator("body"), [
             dialog,
