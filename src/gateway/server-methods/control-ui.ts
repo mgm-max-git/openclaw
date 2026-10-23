@@ -24,6 +24,22 @@ export function createControlUiHandlers(
   loadGitHubPreview: LoadGitHubPreview = loadControlUiGitHubPreview,
   loadSessionPullRequests: LoadSessionPullRequests = loadControlUiSessionPullRequests,
 ): GatewayRequestHandlers {
+  const sessionPullRequestsInFlight = new Map<string, ReturnType<LoadSessionPullRequests>>();
+  const loadSessionPullRequestsOnce = (params: ControlUiSessionPullRequestsParams) => {
+    const key = JSON.stringify([params.agentId ?? "", params.sessionKey, params.refresh === true]);
+    const pending = sessionPullRequestsInFlight.get(key);
+    if (pending) {
+      return pending;
+    }
+    const started = loadSessionPullRequests(params);
+    const tracked = started.finally(() => {
+      if (sessionPullRequestsInFlight.get(key) === tracked) {
+        sessionPullRequestsInFlight.delete(key);
+      }
+    });
+    sessionPullRequestsInFlight.set(key, tracked);
+    return tracked;
+  };
   return {
     "controlUi.githubPreview": async ({ params, respond }) => {
       const target = parseControlUiGitHubPreviewTarget(params);
@@ -59,7 +75,7 @@ export function createControlUiHandlers(
         return;
       }
       try {
-        respond(true, await loadSessionPullRequests(parsed), undefined);
+        respond(true, await loadSessionPullRequestsOnce(parsed), undefined);
       } catch (error) {
         const statusCode = error instanceof ControlUiGitHubError ? error.statusCode : undefined;
         respond(
