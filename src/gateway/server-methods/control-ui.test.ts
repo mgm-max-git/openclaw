@@ -135,6 +135,36 @@ describe("controlUi.sessionPullRequests", () => {
     expect(respond).toHaveBeenCalledWith(true, result, undefined);
   });
 
+  it("coalesces concurrent duplicate session pull-request reads", async () => {
+    let resolveLoad!: (result: ControlUiSessionPullRequests) => void;
+    const pending = new Promise<ControlUiSessionPullRequests>((resolve) => {
+      resolveLoad = resolve;
+    });
+    const loadPullRequests = vi.fn(() => pending);
+    const handlers = createControlUiHandlers(vi.fn(), loadPullRequests);
+    const firstRespond = vi.fn<RespondFn>();
+    const secondRespond = vi.fn<RespondFn>();
+    const handler = expectDefined(
+      handlers["controlUi.sessionPullRequests"],
+      'handlers["controlUi.sessionPullRequests"] test invariant',
+    );
+
+    const first = handler(
+      requestOptions({ sessionKey: "agent:main:main", agentId: "main" }, firstRespond),
+    );
+    const second = handler(
+      requestOptions({ sessionKey: "agent:main:main", agentId: "main" }, secondRespond),
+    );
+    expect(loadPullRequests).toHaveBeenCalledTimes(1);
+
+    const result: ControlUiSessionPullRequests = { pullRequests: [], rateLimited: false };
+    resolveLoad(result);
+    await Promise.all([first, second]);
+
+    expect(firstRespond).toHaveBeenCalledWith(true, result, undefined);
+    expect(secondRespond).toHaveBeenCalledWith(true, result, undefined);
+  });
+
   it("rejects params without a session key", async () => {
     const loadPullRequests = vi.fn();
     const handlers = createControlUiHandlers(vi.fn(), loadPullRequests);

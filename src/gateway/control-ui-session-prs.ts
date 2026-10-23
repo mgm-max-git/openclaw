@@ -5,6 +5,8 @@ import nodePath from "node:path";
 import { normalizeOptionalString } from "@openclaw/normalization-core/string-coerce";
 import { resolveAgentWorkspaceDir, resolveDefaultAgentId } from "../agents/agent-scope.js";
 import { runGit } from "../agents/worktrees/git.js";
+import { getRuntimeConfig } from "../config/io.js";
+import { openSessionEntryReadView } from "../config/sessions/session-accessor.js";
 import { normalizeAgentId, parseAgentSessionKey } from "../routing/session-key.js";
 import type {
   ControlUiSessionBranch,
@@ -21,6 +23,7 @@ import {
   optionalString,
 } from "./control-ui-github-api.js";
 import { parseGitHubRemoteUrl } from "./github-remote.js";
+import { resolveSessionStoreAgentId, resolveSessionStoreKey } from "./session-store-key.js";
 import { loadSessionEntryReadOnly } from "./session-utils.js";
 
 const SUCCESS_CACHE_MS = 60_000;
@@ -106,16 +109,34 @@ async function gitOutput(cwd: string, args: string[]): Promise<string | null> {
 async function resolveSessionPullRequestGitContext(
   params: ControlUiSessionPullRequestsParams,
 ): Promise<SessionPullRequestGitContext | null> {
-  const { cfg, entry, storePath, canonicalKey } = loadSessionEntryReadOnly(params.sessionKey, {
-    agentId: params.agentId,
+  const cfg = getRuntimeConfig();
+  const requestedKey = params.sessionKey.trim();
+  const canonicalKey = resolveSessionStoreKey({
+    cfg,
+    sessionKey: requestedKey,
+    ...(params.agentId ? { storeAgentId: params.agentId } : {}),
   });
+  const agentId =
+    params.agentId &&
+    (canonicalKey === "global" || canonicalKey === "unknown" || !parseAgentSessionKey(requestedKey))
+      ? normalizeAgentId(params.agentId)
+      : resolveSessionStoreAgentId(cfg, canonicalKey);
+  // Canonical UI requests dominate this poller. Probe that exact SQLite row so
+  // concurrent PR refreshes do not materialize and parse the full session store.
+  // Alias and deleted-agent lookups retain the complete compatibility path.
+  const exactEntry =
+    requestedKey === canonicalKey
+      ? openSessionEntryReadView({ agentId }).get(canonicalKey)
+      : undefined;
+  const entry =
+    exactEntry ?? loadSessionEntryReadOnly(requestedKey, { agentId: params.agentId }).entry;
   // Same session/agent scoping as sessions.files.*: a missing entry means an
   // unknown or deleted session, which must not fall back to some agent
   // workspace and surface another checkout's PRs.
-  if (!entry?.sessionId || !storePath) {
+  if (!entry?.sessionId) {
     return null;
   }
-  const agentId = normalizeAgentId(
+  const scopedAgentId = normalizeAgentId(
     parseAgentSessionKey(canonicalKey)?.agentId ??
       params.agentId ??
       parseAgentSessionKey(params.sessionKey)?.agentId ??
@@ -124,7 +145,7 @@ async function resolveSessionPullRequestGitContext(
   const root =
     normalizeOptionalString(entry.spawnedCwd) ??
     normalizeOptionalString(entry.spawnedWorkspaceDir) ??
-    normalizeOptionalString(resolveAgentWorkspaceDir(cfg, agentId));
+    normalizeOptionalString(resolveAgentWorkspaceDir(cfg, scopedAgentId));
   if (!root) {
     return null;
   }
